@@ -8,7 +8,18 @@ export class LoFiProcessor {
   private distortionNode: WaveShaperNode | null = null;
   private vinylNode: AudioBufferSourceNode | null = null;
   private compressorNode: DynamicsCompressorNode | null = null;
+  private analyserNode: AnalyserNode | null = null;
   private isInitialized: boolean = false;
+  
+  // Real-time analysis properties
+  private currentMood: 'chill' | 'cafe' | 'study' | 'party' = 'chill';
+  private baseMoodSettings = {
+    filterFrequency: 2500,
+    gain: 0.7,
+    compression: 8
+  };
+  private analysisInterval: number | null = null;
+  private isAnalyzing: boolean = false;
 
   async initialize() {
     try {
@@ -21,6 +32,11 @@ export class LoFiProcessor {
       this.reverbNode = this.audioContext.createConvolver();
       this.distortionNode = this.audioContext.createWaveShaper();
       this.compressorNode = this.audioContext.createDynamicsCompressor();
+      
+      // Create analyser node for real-time analysis
+      this.analyserNode = this.audioContext.createAnalyser();
+      this.analyserNode.fftSize = 2048;
+      this.analyserNode.smoothingTimeConstant = 0.8;
 
       // Configure lo-fi filter (low-pass to muffle highs)
       this.filterNode.type = 'lowpass';
@@ -35,7 +51,7 @@ export class LoFiProcessor {
       this.compressorNode.release.value = 0.25;
 
       // Configure distortion for warmth
-      this.distortionNode.curve = this.makeDistortionCurve(30);
+      this.distortionNode.curve = this.makeDistortionCurve(30) as Float32Array;
       this.distortionNode.oversample = '4x';
 
       // Create reverb impulse response
@@ -190,8 +206,9 @@ export class LoFiProcessor {
   private connectAudioChain(source: AudioNode) {
     if (!this.audioContext) return;
 
-    // Connect the audio processing chain
+    // Connect the audio processing chain with analyser
     source
+      .connect(this.analyserNode!)
       .connect(this.compressorNode!)
       .connect(this.distortionNode!)
       .connect(this.filterNode!)
@@ -199,40 +216,197 @@ export class LoFiProcessor {
       .connect(this.gainNode!)
       .connect(this.audioContext.destination);
 
-    console.log('🔗 Audio processing chain connected');
+    console.log('🔗 Audio processing chain connected with real-time analysis');
   }
 
   // Apply different lo-fi presets
   applyLoFiPreset(preset: 'chill' | 'cafe' | 'study' | 'party') {
     if (!this.filterNode || !this.gainNode || !this.compressorNode) return;
 
+    // Store current mood
+    this.currentMood = preset;
+
+    // Set base mood settings
     switch (preset) {
       case 'chill':
-        this.filterNode.frequency.value = 2500;
-        this.gainNode.gain.value = 0.7;
-        this.compressorNode.ratio.value = 8;
+        this.baseMoodSettings = {
+          filterFrequency: 2500,
+          gain: 0.7,
+          compression: 8
+        };
         break;
       
       case 'cafe':
-        this.filterNode.frequency.value = 3500;
-        this.gainNode.gain.value = 0.8;
-        this.compressorNode.ratio.value = 6;
+        this.baseMoodSettings = {
+          filterFrequency: 3500,
+          gain: 0.8,
+          compression: 6
+        };
         break;
       
       case 'study':
-        this.filterNode.frequency.value = 2000;
-        this.gainNode.gain.value = 0.6;
-        this.compressorNode.ratio.value = 12;
+        this.baseMoodSettings = {
+          filterFrequency: 2000,
+          gain: 0.6,
+          compression: 12
+        };
         break;
       
       case 'party':
-        this.filterNode.frequency.value = 4000;
-        this.gainNode.gain.value = 0.9;
-        this.compressorNode.ratio.value = 4;
+        this.baseMoodSettings = {
+          filterFrequency: 4000,
+          gain: 0.9,
+          compression: 4
+        };
         break;
     }
 
+    // Apply base settings
+    this.filterNode.frequency.value = this.baseMoodSettings.filterFrequency;
+    this.gainNode.gain.value = this.baseMoodSettings.gain;
+    this.compressorNode.ratio.value = this.baseMoodSettings.compression;
+
     console.log(`🎛️ Applied ${preset} lo-fi preset`);
+    
+    // Start real-time analysis
+    this.startRealtimeAnalysis();
+  }
+
+  // Start real-time audio analysis
+  private startRealtimeAnalysis() {
+    // Stop any existing analysis
+    this.stopRealtimeAnalysis();
+
+    if (!this.analyserNode || !this.audioContext) return;
+
+    this.isAnalyzing = true;
+    const bufferLength = this.analyserNode.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    // Analysis interval - runs every 100ms
+    this.analysisInterval = window.setInterval(() => {
+      if (!this.analyserNode || !this.isAnalyzing) return;
+
+      // Get frequency data
+      this.analyserNode.getByteFrequencyData(dataArray);
+
+      // Calculate frequency ranges
+      const sampleRate = this.audioContext!.sampleRate;
+      const nyquist = sampleRate / 2;
+      const binWidth = nyquist / bufferLength;
+
+      // Calculate bass level (0-250Hz)
+      const bassEnd = Math.floor(250 / binWidth);
+      let bassSum = 0;
+      for (let i = 0; i < bassEnd; i++) {
+        bassSum += dataArray[i];
+      }
+      const bassLevel = bassSum / bassEnd;
+
+      // Calculate mid level (250-2000Hz)
+      const midStart = bassEnd;
+      const midEnd = Math.floor(2000 / binWidth);
+      let midSum = 0;
+      for (let i = midStart; i < midEnd; i++) {
+        midSum += dataArray[i];
+      }
+      const midLevel = midSum / (midEnd - midStart);
+
+      // Calculate treble level (2000Hz+)
+      const trebleStart = midEnd;
+      let trebleSum = 0;
+      for (let i = trebleStart; i < bufferLength; i++) {
+        trebleSum += dataArray[i];
+      }
+      const trebleLevel = trebleSum / (bufferLength - trebleStart);
+
+      // Apply dynamic adjustments
+      const adjustments = this.calculateDynamicAdjustments(bassLevel, midLevel, trebleLevel);
+      this.applyDynamicAdjustments(adjustments);
+    }, 100);
+
+    console.log('🎯 Real-time audio analysis started');
+  }
+
+  // Calculate dynamic adjustments based on audio levels
+  private calculateDynamicAdjustments(bass: number, mid: number, treble: number) {
+    let filterAdjust = 0;
+    let gainAdjust = 0;
+    let compressionAdjust = 0;
+
+    // Bass adjustments
+    if (bass > 180) {
+      filterAdjust -= 300; // Reduce filter frequency for heavy bass
+    } else if (bass < 80) {
+      filterAdjust += 200; // Increase filter for light bass
+    }
+
+    // Mid adjustments
+    if (mid > 160) {
+      gainAdjust += 0.05; // Slightly boost for rich mids
+    } else if (mid < 80) {
+      gainAdjust -= 0.05; // Reduce for thin mids
+    }
+
+    // Treble adjustments
+    if (treble > 180) {
+      compressionAdjust -= 2; // Reduce compression for bright treble
+      filterAdjust -= 150; // Lower filter slightly
+    } else if (treble < 60) {
+      filterAdjust += 100; // Keep warmth with less treble
+    }
+
+    return {
+      filterAdjust,
+      gainAdjust,
+      compressionAdjust
+    };
+  }
+
+  // Apply dynamic adjustments smoothly
+  private applyDynamicAdjustments(adjustments: { filterAdjust: number; gainAdjust: number; compressionAdjust: number }) {
+    if (!this.filterNode || !this.gainNode || !this.compressorNode || !this.audioContext) return;
+
+    const now = this.audioContext.currentTime;
+    const transitionTime = 0.2; // Smooth 200ms transition
+
+    // Calculate new values based on base + adjustments
+    const newFilterFreq = Math.max(1000, Math.min(8000, 
+      this.baseMoodSettings.filterFrequency + adjustments.filterAdjust
+    ));
+    
+    const newGain = Math.max(0.3, Math.min(1.0, 
+      this.baseMoodSettings.gain + adjustments.gainAdjust
+    ));
+    
+    const newCompression = Math.max(2, Math.min(20, 
+      this.baseMoodSettings.compression + adjustments.compressionAdjust
+    ));
+
+    // Apply smooth transitions
+    this.filterNode.frequency.setTargetAtTime(newFilterFreq, now, transitionTime);
+    this.gainNode.gain.setTargetAtTime(newGain, now, transitionTime);
+    this.compressorNode.ratio.setTargetAtTime(newCompression, now, transitionTime);
+  }
+
+  // Stop real-time analysis
+  private stopRealtimeAnalysis() {
+    if (this.analysisInterval !== null) {
+      clearInterval(this.analysisInterval);
+      this.analysisInterval = null;
+    }
+    
+    this.isAnalyzing = false;
+
+    // Reset to base mood settings
+    if (this.filterNode && this.gainNode && this.compressorNode && this.audioContext) {
+      const now = this.audioContext.currentTime;
+      this.filterNode.frequency.setTargetAtTime(this.baseMoodSettings.filterFrequency, now, 0.2);
+      this.gainNode.gain.setTargetAtTime(this.baseMoodSettings.gain, now, 0.2);
+      this.compressorNode.ratio.setTargetAtTime(this.baseMoodSettings.compression, now, 0.2);
+    }
+
+    console.log('⏹️ Real-time audio analysis stopped');
   }
 
   // Add vinyl crackle effect
@@ -265,6 +439,9 @@ export class LoFiProcessor {
 
   // Cleanup
   dispose() {
+    // Stop real-time analysis
+    this.stopRealtimeAnalysis();
+    
     if (this.vinylNode) {
       this.vinylNode.stop();
       this.vinylNode.disconnect();
