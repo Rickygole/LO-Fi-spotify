@@ -133,7 +133,6 @@ export function PlaylistSelector({ onPlaylistSelect, onLogout }: PlaylistSelecto
                 <div
                   key={playlist.id}
                   className="playlist-card"
-                  onClick={() => onPlaylistSelect(playlist)}
                 >
                   <div className="playlist-image-container">
                     {playlist.images?.[0] ? (
@@ -162,8 +161,17 @@ export function PlaylistSelector({ onPlaylistSelect, onLogout }: PlaylistSelecto
                   <div className="playlist-info">
                     <h3 className="playlist-name">{playlist.name}</h3>
                     <p className="playlist-description">
-                      {playlist.description || `${playlist.tracks.total} songs • by ${playlist.owner.display_name}`}
+                      {playlist.description || `${playlist.tracks.total} songs`}
                     </p>
+                    
+                    <div className="playlist-actions">
+                      <button 
+                        className="action-btn play-btn"
+                        onClick={() => onPlaylistSelect(playlist)}
+                      >
+                        ▶️ Play
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

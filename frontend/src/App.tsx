@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { spotifyAPI } from './spotify-api';
 import { LoginScreen } from './components/LoginScreen';
 import { PlaylistSelector } from './components/PlaylistSelector';
-import { LofiPlayer } from './components/LofiPlayer';
+import { SpotifyPlayer } from './components/SpotifyPlayer';
 import type { SpotifyPlaylist } from './types';
 import './App.css';
 
@@ -17,11 +17,15 @@ function App() {
     const hasTokens = spotifyAPI.loadTokensFromStorage();
     if (hasTokens && spotifyAPI.isAuthenticated()) {
       setAppState('playlists');
+      return;
     }
 
-    // Handle OAuth callback
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.has('access_token')) {
+    // Handle OAuth callback - check both hash and search params
+    const hash = window.location.hash.substring(1);
+    const hashParams = new URLSearchParams(hash);
+    const searchParams = new URLSearchParams(window.location.search);
+    
+    if (hashParams.has('access_token') || searchParams.has('access_token')) {
       const success = spotifyAPI.handleCallback();
       if (success) {
         setAppState('playlists');
@@ -56,7 +60,7 @@ function App() {
       )}
       
       {appState === 'player' && selectedPlaylist && (
-        <LofiPlayer 
+        <SpotifyPlayer 
           playlist={selectedPlaylist}
           onBack={handleBackToPlaylists}
         />
