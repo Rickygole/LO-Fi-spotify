@@ -13,6 +13,11 @@ function App() {
   const [selectedPlaylist, setSelectedPlaylist] = useState<SpotifyPlaylist | null>(null);
 
   useEffect(() => {
+    // Set up Spotify Web Playback SDK callback
+    (window as any).onSpotifyWebPlaybackSDKReady = () => {
+      console.log('🎵 Spotify Web Playback SDK Ready');
+    };
+
     // Check if user is already authenticated
     const hasTokens = spotifyAPI.loadTokensFromStorage();
     if (hasTokens && spotifyAPI.isAuthenticated()) {

@@ -77,33 +77,71 @@ export function SpotifyPlayer({ playlist, onBack }: SpotifyPlayerProps) {
   };
 
   const initializeSpotifyPlayer = async () => {
+    console.log('🎵 Initializing Spotify Player...');
+    
     const accessToken = getAccessTokenFromURL() || localStorage.getItem('spotify_access_token');
     
     if (!accessToken) {
-      console.error('No access token found');
+      console.error('❌ No access token found');
       return;
     }
 
+    // Wait for Spotify SDK to be ready
     if (!window.Spotify) {
-      console.error('Spotify Web Playback SDK not loaded');
-      return;
+      console.log('🔄 Waiting for Spotify SDK to load...');
+      return new Promise((resolve) => {
+        (window as any).onSpotifyWebPlaybackSDKReady = () => {
+          console.log('✅ Spotify SDK loaded, initializing player...');
+          initializeSpotifyPlayer().then(resolve);
+        };
+      });
     }
 
+    console.log('🎵 Creating Spotify Player...');
     const spotifyPlayer = new window.Spotify.Player({
       name: 'Lofi - Spotify',
-      getOAuthToken: (cb) => { cb(accessToken); },
+      getOAuthToken: (cb) => { 
+        console.log('🔑 Providing OAuth token to player');
+        cb(accessToken); 
+      },
       volume: 0.5
     });
 
     spotifyPlayer.addListener('ready', ({ device_id }) => {
-      console.log('Ready with Device ID', device_id);
+      console.log('✅ Spotify Player Ready with Device ID:', device_id);
       setDeviceId(device_id);
-      setPlayerReady(true);
+      
+      // Try to activate the device by attempting to get current state
+      console.log('🔄 Activating device...');
+      spotifyPlayer.getCurrentState().then((state) => {
+        console.log('📱 Device state check:', state ? 'active' : 'inactive');
+      }).catch((error) => {
+        console.log('⚠️ Device state check failed, but continuing...');
+      });
+      
+      // Add delay to ensure device is fully registered and activated
+      setTimeout(() => {
+        setPlayerReady(true);
+        console.log('🎵 Player marked as ready');
+      }, 3000); // Increased delay for activation
     });
 
     spotifyPlayer.addListener('not_ready', ({ device_id }) => {
-      console.log('Device ID has gone offline', device_id);
+      console.log('⚠️ Device ID has gone offline', device_id);
       setPlayerReady(false);
+      setDeviceId(null);
+    });
+
+    spotifyPlayer.addListener('initialization_error', ({ message }) => {
+      console.error('❌ Spotify initialization error:', message);
+    });
+
+    spotifyPlayer.addListener('authentication_error', ({ message }) => {
+      console.error('❌ Spotify authentication error:', message);
+    });
+
+    spotifyPlayer.addListener('account_error', ({ message }) => {
+      console.error('❌ Spotify account error:', message);
     });
 
     spotifyPlayer.addListener('player_state_changed', (state) => {
@@ -135,8 +173,18 @@ export function SpotifyPlayer({ playlist, onBack }: SpotifyPlayerProps) {
       setDuration((state as any).duration);
     });
 
-    await spotifyPlayer.connect();
-    setPlayer(spotifyPlayer);
+    console.log('🔗 Connecting to Spotify Player...');
+    try {
+      const connected = await spotifyPlayer.connect();
+      if (connected) {
+        console.log('✅ Connected to Spotify Player');
+        setPlayer(spotifyPlayer);
+      } else {
+        console.error('❌ Failed to connect to Spotify Player');
+      }
+    } catch (error) {
+      console.error('❌ Error connecting to Spotify Player:', error);
+    }
   };
 
   const getAccessTokenFromURL = (): string | null => {
@@ -183,15 +231,46 @@ export function SpotifyPlayer({ playlist, onBack }: SpotifyPlayerProps) {
   };
 
   const playPlaylist = async () => {
-    if (!deviceId || !playerReady || tracks.length === 0) return;
+    console.log('🎬 START YOUR MIX clicked!', { deviceId, tracks: tracks.length, selectedMood });
+    console.log('🔍 Current deviceId state value:', deviceId);
+    console.log('🔍 Current playerReady state value:', playerReady);
+    
+    if (!deviceId) {
+      console.error('❌ No device ID available - Spotify player may not be initialized');
+      alert('Spotify player not ready. Please wait a moment and try again.');
+      return;
+    }
+    
+    if (tracks.length === 0) {
+      console.error('❌ No tracks loaded');
+      return;
+    }
     
     try {
+      console.log(`🎵 Starting playback in ${selectedMood} mode with ${tracks.length} tracks`);
+      
+      // First, try to ensure the device is active by making a simple player call
+      if (player) {
+        try {
+          await player.getCurrentState();
+          console.log('📱 Device is responsive');
+        } catch (error) {
+          console.log('⚠️ Device may not be fully active, but continuing...');
+        }
+      }
+      
       const trackUris = tracks.map((track: SpotifyTrack) => track.uri || `spotify:track:${track.id}`);
       await spotifyAPI.startPlayback(deviceId, trackUris);
       setCurrentTrack(tracks[0]);
-      console.log(`🎵 Playing playlist in ${selectedMood} mode`);
-    } catch (error) {
-      console.error('Error playing playlist:', error);
+      console.log(`✅ Playback started! Real-time AI lo-fi processing active`);
+    } catch (error: any) {
+      console.error('❌ Error playing playlist:', error);
+      
+      if (error.message && error.message.includes('Device not found or not active')) {
+        alert('🎵 To activate your device:\n\n1. Open Spotify in another tab (open.spotify.com)\n2. Start playing any song briefly\n3. Come back here and try again\n\nThis helps activate the Web Player device.');
+      } else {
+        alert('Error starting playback. Please check the console for details.');
+      }
     }
   };
 
@@ -330,22 +409,20 @@ export function SpotifyPlayer({ playlist, onBack }: SpotifyPlayerProps) {
               </button>
             ))}
           </div>
+          
+          {/* Start Your Mix Button */}
+          <button 
+            className="start-mix-button" 
+            onClick={playPlaylist}
+          >
+            <svg viewBox="0 0 24 24" className="play-icon">
+              <path fill="currentColor" d="M8 5v14l11-7z"/>
+            </svg>
+            START YOUR MIX
+          </button>
         </div>
 
         <div className="playlist-content">
-          <div className="playlist-controls">
-            <button 
-              className="play-button" 
-              onClick={playPlaylist}
-              disabled={!playerReady}
-            >
-              <svg viewBox="0 0 24 24" className="play-icon">
-                <path fill="currentColor" d="M7.4 5.5c-.4 0-.8.2-1.1.5-.6.6-.6 1.6 0 2.2L12 13.9l5.7-5.7c.6-.6.6-1.6 0-2.2-.6-.6-1.6-.6-2.2 0L12 9.5 8.5 6c-.3-.3-.7-.5-1.1-.5z"/>
-              </svg>
-              Play Lo-Fi Mix
-            </button>
-          </div>
-
           <div className="track-list">
             <div className="track-list-header">
               <div className="track-header-number">#</div>

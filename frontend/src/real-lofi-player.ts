@@ -1,3 +1,4 @@
+/// <reference path="./spotify-types.d.ts" />
 import type { SpotifyTrack, LofiMood } from './types';
 
 interface RealLoFiState {
@@ -16,9 +17,6 @@ export class RealLoFiPlayer {
   private gainNode: GainNode | null = null;
   private filterNode: BiquadFilterNode | null = null;
   private compressorNode: DynamicsCompressorNode | null = null;
-  private vinylNode: GainNode | null = null;
-  private tracks: SpotifyTrack[] = [];
-  private currentTrackIndex = 0;
 
   constructor() {
     this.state = {
@@ -71,18 +69,18 @@ export class RealLoFiPlayer {
     if (!this.spotifyPlayer) return;
 
     // Ready
-    this.spotifyPlayer.addListener('ready', ({ device_id }) => {
+    this.spotifyPlayer.addListener('ready', ({ device_id }: { device_id: string }) => {
       console.log('🎵 Spotify Player Ready with Device ID:', device_id);
       this.deviceId = device_id;
     });
 
     // Not Ready
-    this.spotifyPlayer.addListener('not_ready', ({ device_id }) => {
+    this.spotifyPlayer.addListener('not_ready', ({ device_id }: { device_id: string }) => {
       console.log('❌ Spotify Player Not Ready:', device_id);
     });
 
     // Player state changed
-    this.spotifyPlayer.addListener('player_state_changed', (state) => {
+    this.spotifyPlayer.addListener('player_state_changed', (state: Spotify.WebPlaybackState | null) => {
       if (!state) return;
 
       this.state.isPlaying = !state.paused;
@@ -91,7 +89,7 @@ export class RealLoFiPlayer {
         this.state.currentTrack = {
           id: state.track_window.current_track.id,
           name: state.track_window.current_track.name,
-          artists: state.track_window.current_track.artists.map(artist => ({
+          artists: state.track_window.current_track.artists.map((artist: { name: string; uri: string }) => ({
             id: artist.uri.split(':')[2],
             name: artist.name
           })),
@@ -113,7 +111,6 @@ export class RealLoFiPlayer {
       this.gainNode = this.audioContext.createGain();
       this.filterNode = this.audioContext.createBiquadFilter();
       this.compressorNode = this.audioContext.createDynamicsCompressor();
-      this.vinylNode = this.audioContext.createGain();
 
       // Configure lo-fi effects
       this.setupLoFiEffects();
@@ -155,9 +152,7 @@ export class RealLoFiPlayer {
 
       console.log(`🎛️ Starting Real Lo-Fi Mix with ${tracks.length} tracks in ${mood} mode...`);
       
-      this.tracks = tracks;
       this.state.mood = mood;
-      this.currentTrackIndex = 0;
 
       // Apply mood-specific lo-fi settings
       this.applyMoodSettings(mood);

@@ -175,14 +175,78 @@ class SpotifyAPI {
   // Start playback on a specific device
   async startPlayback(deviceId: string, trackUris: string[]): Promise<void> {
     try {
-      await axios.put('https://api.spotify.com/v1/me/player/play', {
-        device_id: deviceId,
+      console.log('🎵 Starting playback with device ID:', deviceId, 'tracks:', trackUris.length);
+      
+      // First, ensure device is active by transferring playback to it
+      console.log('📱 Transferring playback to device...');
+      await axios.put('https://api.spotify.com/v1/me/player', {
+        device_ids: [deviceId],
+        play: false
+      }, {
+        headers: this.getAuthHeader()
+      });
+
+      // Wait for the transfer to complete
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Verify device is now active by checking current playback state
+      try {
+        const playbackResponse = await axios.get('https://api.spotify.com/v1/me/player', {
+          headers: this.getAuthHeader()
+        });
+        
+        if (playbackResponse.data?.device?.id !== deviceId) {
+          console.log('🔄 Device not active yet, trying alternative approach...');
+          
+          // Alternative: Start playback without device transfer first
+          await axios.put(`https://api.spotify.com/v1/me/player/play`, {
+            uris: trackUris.slice(0, 1) // Start with just one track
+          }, {
+            headers: this.getAuthHeader()
+          });
+          
+          // Wait a moment then transfer to our device
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          await axios.put('https://api.spotify.com/v1/me/player', {
+            device_ids: [deviceId],
+            play: true
+          }, {
+            headers: this.getAuthHeader()
+          });
+          
+          // Wait and then start our full playlist
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      } catch (stateError) {
+        console.log('🔄 No current playback state, proceeding with direct playback...');
+      }
+
+      // Now start playing the tracks on our device
+      console.log('▶️ Starting playback on device...');
+      await axios.put(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
         uris: trackUris
       }, {
         headers: this.getAuthHeader()
       });
-    } catch (error) {
-      console.error('Error starting playback:', error);
+
+      console.log('✅ Playback started successfully');
+    } catch (error: any) {
+      console.error('❌ Error starting playback:', error);
+      
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+        
+        if (error.response.status === 404) {
+          throw new Error('Device not found or not active. Please ensure the Spotify player is ready.');
+        } else if (error.response.status === 403) {
+          throw new Error('Premium account required for playback control.');
+        } else if (error.response.status === 401) {
+          throw new Error('Authentication failed. Please log in again.');
+        }
+      }
+      
       throw error;
     }
   }

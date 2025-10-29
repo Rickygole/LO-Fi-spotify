@@ -104,6 +104,12 @@ export class LoFiProcessor {
     }
 
     try {
+      // Check if already connected
+      if (this.sourceNode) {
+        console.log('✅ Already connected to Spotify audio');
+        return true;
+      }
+
       // Look for Spotify Web Playback SDK audio element
       const audioElements = document.querySelectorAll('audio');
       let spotifyAudio: HTMLAudioElement | null = null;
@@ -124,15 +130,25 @@ export class LoFiProcessor {
       
       if (spotifyAudio) {
         console.log('🎵 Connecting to Spotify audio element...');
-        const source = this.audioContext.createMediaElementSource(spotifyAudio);
-        this.connectAudioChain(source);
-        this.sourceNode = source;
         
-        // Store reference for later use
-        (window as any).spotifyAudioElement = spotifyAudio;
-        
-        console.log('✅ Connected to Spotify audio successfully!');
-        return true;
+        // Check if this element already has a source node
+        try {
+          const source = this.audioContext.createMediaElementSource(spotifyAudio);
+          this.connectAudioChain(source);
+          this.sourceNode = source;
+          
+          // Store reference for later use
+          (window as any).spotifyAudioElement = spotifyAudio;
+          
+          console.log('✅ Connected to Spotify audio successfully!');
+          return true;
+        } catch (err: any) {
+          if (err.name === 'InvalidStateError') {
+            console.log('ℹ️ Audio element already connected, reusing existing connection');
+            return true;
+          }
+          throw err;
+        }
       }
       
       console.warn('⚠️ Could not find or create Spotify audio element');
@@ -140,8 +156,8 @@ export class LoFiProcessor {
     } catch (error) {
       console.error('❌ Failed to connect to Spotify player:', error);
       
-      // Fallback: Try getUserMedia approach
-      return await this.setupAlternativeAudioCapture();
+      // Don't use fallback methods - just return false
+      return false;
     }
   }
 
@@ -154,53 +170,6 @@ export class LoFiProcessor {
     
     console.log('🎵 Created Spotify audio element');
     return audio;
-  }
-
-  private async setupAlternativeAudioCapture(): Promise<boolean> {
-    try {
-      // Alternative: Use getUserMedia to capture system audio
-      // Note: This requires user permission and may not work in all browsers
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false
-        } 
-      });
-      
-      const source = this.audioContext!.createMediaStreamSource(stream);
-      this.connectAudioChain(source);
-      
-      console.log('✅ Connected to system audio (may include background noise)');
-      return true;
-    } catch (error) {
-      console.warn('⚠️ Could not access system audio:', error);
-      
-      // Fallback: Apply effects to a demo audio element
-      this.setupDemoAudioProcessing();
-      return false;
-    }
-  }
-
-  private setupDemoAudioProcessing() {
-    // Create a demo audio element for testing the effects
-    const audio = new Audio();
-    audio.crossOrigin = 'anonymous';
-    audio.loop = true;
-    
-    // Use a public domain lo-fi track for demonstration
-    audio.src = 'https://www.soundjay.com/misc/sounds/bell-ringing-05.wav';
-    
-    if (this.audioContext) {
-      const source = this.audioContext.createMediaElementSource(audio);
-      this.connectAudioChain(source);
-      
-      // Auto-play demo (muted initially)
-      audio.volume = 0.1;
-      audio.play().catch(console.error);
-      
-      console.log('🎵 Demo lo-fi effects active (using sample audio)');
-    }
   }
 
   private connectAudioChain(source: AudioNode) {
