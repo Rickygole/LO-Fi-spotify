@@ -828,3 +828,158 @@
   width: 20px;
   height: 20px;
 }
+
+/* Device Status Indicator */
+.device-status {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+}
+
+.status-indicator.ready .status-dot {
+  background: #1DB954;
+  animation: pulse 2s infinite;
+}
+
+.status-indicator.connecting .status-dot {
+  background: #FFA500;
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0.3; }
+}
+
+.status-text {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.status-indicator.ready .status-text {
+  color: #1DB954;
+}
+
+.status-indicator.connecting .status-text {
+  color: #FFA500;
+}
+
+.status-help {
+  opacity: 0.7;
+}
+
+.status-help small {
+  font-size: 12px;
+  color: #b3b3b3;
+}
+
+/* Lo-Fi Status Indicator */
+.lofi-status {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.9);
+  border: 2px solid #1DB954;
+  border-radius: 12px;
+  padding: 16px;
+  min-width: 280px;
+  backdrop-filter: blur(10px);
+  color: white;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  z-index: 1000;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.lofi-status.inactive {
+  opacity: 0.7;
+  border-color: #666;
+}
+
+.lofi-status-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.lofi-indicator {
+  width: 10px;
+  height: 10px;
+  background: #1DB954;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+.lofi-status.inactive .lofi-indicator {
+  background: #666;
+  animation: none;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.8); }
+}
+
+.frequency-visualizer {
+  display: flex;
+  align-items: end;
+  gap: 2px;
+  height: 40px;
+  margin-bottom: 12px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+
+.frequency-bar {
+  width: 4px;
+  background: linear-gradient(to top, #1DB954, #1ed760);
+  border-radius: 2px;
+  transition: height 0.1s ease;
+  min-height: 2px;
+}
+
+.lofi-status.inactive .frequency-bar {
+  background: linear-gradient(to top, #666, #888);
+}
+
+.effects-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.effect-badge {
+  background: rgba(29, 185, 84, 0.2);
+  border: 1px solid rgba(29, 185, 84, 0.4);
+  color: #1DB954;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.lofi-status.inactive .effect-badge {
+  background: rgba(102, 102, 102, 0.2);
+  border-color: rgba(102, 102, 102, 0.4);
+  color: #999;
+}

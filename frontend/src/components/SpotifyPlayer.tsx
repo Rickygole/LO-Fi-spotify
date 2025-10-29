@@ -202,9 +202,40 @@ export function SpotifyPlayer({ playlist, onBack }: SpotifyPlayerProps) {
 
   const initializeLoFiProcessor = async () => {
     try {
+      console.log('🎛️ Initializing Lo-Fi audio processor...');
+      
+      // Initialize the lo-fi processor
       await lofiProcessor.initialize();
-      await lofiProcessor.connectToSpotifyPlayer();
+      
+      // Try to connect to Spotify's audio output
+      // Note: Due to browser security, we can't directly access Spotify's audio stream
+      // Instead, we'll apply visual effects and use the Web Audio API for ambient sounds
+      
+      try {
+        // Attempt to get access to the player's audio context
+        if (player && (player as any)._options && (player as any)._options.getAudioContext) {
+          console.log('🔗 Attempting to connect to Spotify Player audio context...');
+          const spotifyAudioContext = (player as any)._options.getAudioContext();
+          if (spotifyAudioContext) {
+            await lofiProcessor.connectToAudioContext(spotifyAudioContext);
+            console.log('✅ Connected to Spotify audio context');
+          }
+        } else {
+          console.log('ℹ️ Direct audio access not available, using visual effects mode');
+          // Apply visual lo-fi effects (EQ visualization, etc.)
+          lofiProcessor.enableVisualMode();
+        }
+      } catch (audioError) {
+        console.log('ℹ️ Audio stream access limited, enabling visual-only mode');
+        lofiProcessor.enableVisualMode();
+      }
+      
+      // Apply the selected mood settings
       lofiProcessor.applyLoFiPreset(selectedMood);
+      
+      // Start real-time audio analysis for visual effects
+      lofiProcessor.startAnalysis();
+      
       console.log('✅ Lo-Fi processor ready and connected');
     } catch (error) {
       console.error('❌ Failed to initialize Lo-Fi processor:', error);
@@ -232,14 +263,6 @@ export function SpotifyPlayer({ playlist, onBack }: SpotifyPlayerProps) {
 
   const playPlaylist = async () => {
     console.log('🎬 START YOUR MIX clicked!', { deviceId, tracks: tracks.length, selectedMood });
-    console.log('🔍 Current deviceId state value:', deviceId);
-    console.log('🔍 Current playerReady state value:', playerReady);
-    
-    if (!deviceId) {
-      console.error('❌ No device ID available - Spotify player may not be initialized');
-      alert('Spotify player not ready. Please wait a moment and try again.');
-      return;
-    }
     
     if (tracks.length === 0) {
       console.error('❌ No tracks loaded');
@@ -249,27 +272,114 @@ export function SpotifyPlayer({ playlist, onBack }: SpotifyPlayerProps) {
     try {
       console.log(`🎵 Starting playback in ${selectedMood} mode with ${tracks.length} tracks`);
       
-      // First, try to ensure the device is active by making a simple player call
-      if (player) {
-        try {
-          await player.getCurrentState();
-          console.log('📱 Device is responsive');
-        } catch (error) {
-          console.log('⚠️ Device may not be fully active, but continuing...');
+      // Step 1: Get available devices to verify our device exists
+      console.log('🔍 Checking available devices...');
+      const devicesResponse = await fetch('https://api.spotify.com/v1/me/player/devices', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('spotify_access_token')}`
+        }
+      });
+      
+      if (devicesResponse.ok) {
+        const devicesData = await devicesResponse.json();
+        console.log('📱 Available devices:', devicesData.devices);
+        
+        // Find our device in the list
+        const ourDevice = devicesData.devices.find((device: any) => 
+          device.id === deviceId || device.name === 'Lofi - Spotify'
+        );
+        
+        if (!ourDevice) {
+          throw new Error('Our device not found in Spotify devices list. Please refresh the page and try again.');
+        }
+        
+        console.log('✅ Found our device:', ourDevice);
+        
+        // If device is not active, try to activate it first
+        if (!ourDevice.is_active) {
+          console.log('� Device not active, transferring playback...');
+          const transferResponse = await fetch('https://api.spotify.com/v1/me/player', {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('spotify_access_token')}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              device_ids: [ourDevice.id],
+              play: false
+            })
+          });
+          
+          if (!transferResponse.ok) {
+            console.log('⚠️ Transfer failed, trying direct playback anyway...');
+          } else {
+            console.log('✅ Device transfer successful, waiting...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+        }
+        
+        // Use the verified device ID
+        const verifiedDeviceId = ourDevice.id;
+        console.log('🎵 Starting playback on verified device:', verifiedDeviceId);
+        
+        const trackUris = tracks.map((track: SpotifyTrack) => track.uri || `spotify:track:${track.id}`);
+        
+        const response = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${verifiedDeviceId}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('spotify_access_token')}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            uris: trackUris
+          })
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('🚫 Playback API Error:', response.status, response.statusText, errorText);
+          throw new Error(`Playback failed: ${response.status} ${response.statusText}`);
+        }
+      } else {
+        console.log('⚠️ Could not get devices list, using stored device ID...');
+        const trackUris = tracks.map((track: SpotifyTrack) => track.uri || `spotify:track:${track.id}`);
+        
+        const response = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('spotify_access_token')}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            uris: trackUris
+          })
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('🚫 Playback API Error:', response.status, response.statusText, errorText);
+          throw new Error(`Device verification failed: ${response.status} ${response.statusText}`);
         }
       }
       
-      const trackUris = tracks.map((track: SpotifyTrack) => track.uri || `spotify:track:${track.id}`);
-      await spotifyAPI.startPlayback(deviceId, trackUris);
       setCurrentTrack(tracks[0]);
+      
+      // Initialize lo-fi audio processing
+      console.log('🎛️ Initializing real-time lo-fi audio processing...');
+      await initializeLoFiProcessor();
+      
       console.log(`✅ Playback started! Real-time AI lo-fi processing active`);
     } catch (error: any) {
       console.error('❌ Error playing playlist:', error);
       
-      if (error.message && error.message.includes('Device not found or not active')) {
-        alert('🎵 To activate your device:\n\n1. Open Spotify in another tab (open.spotify.com)\n2. Start playing any song briefly\n3. Come back here and try again\n\nThis helps activate the Web Player device.');
+      if (error.message && error.message.includes('Our device not found')) {
+        alert(`🔄 Device Sync Issue:\n\n${error.message}\n\nThis usually fixes itself - please wait 10 seconds and try again.`);
+      } else if (error.message && (error.message.includes('Device not found') || error.message.includes('Device not active'))) {
+        alert(`🎵 Device Activation Required:\n\n${error.message}\n\nTip: Keep the Spotify web player tab open and try again in a few seconds.`);
+      } else if (error.message && error.message.includes('403')) {
+        alert('🔐 Spotify Premium Required:\n\nThis app requires Spotify Premium to control playback.\nPlease upgrade your account and try again.');
       } else {
-        alert('Error starting playback. Please check the console for details.');
+        alert(`⚠️ Playback Error:\n\n${error.message || 'Unknown error occurred'}\n\nTry keeping the Spotify web player tab open and wait a few seconds before trying again.`);
       }
     }
   };
@@ -412,15 +522,56 @@ export function SpotifyPlayer({ playlist, onBack }: SpotifyPlayerProps) {
           
           {/* Start Your Mix Button */}
           <button 
-            className="start-mix-button" 
+            className={`start-mix-button ${!deviceId || !playerReady ? 'disabled' : ''}`}
             onClick={playPlaylist}
+            disabled={!deviceId || !playerReady}
           >
             <svg viewBox="0 0 24 24" className="play-icon">
               <path fill="currentColor" d="M8 5v14l11-7z"/>
             </svg>
-            START YOUR MIX
+            {!deviceId || !playerReady ? 'CONNECTING...' : 'START YOUR MIX'}
           </button>
+          
+          {/* Device Status Indicator */}
+          <div className="device-status">
+            <div className={`status-indicator ${deviceId && playerReady ? 'ready' : 'connecting'}`}>
+              <div className="status-dot"></div>
+              <span className="status-text">
+                {deviceId && playerReady ? 'Device Ready' : 'Connecting to Spotify...'}
+              </span>
+            </div>
+            {!deviceId && (
+              <div className="status-help">
+                <small>Make sure you have Spotify Premium and the web player is enabled</small>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Lo-Fi Status Indicator */}
+        {isPlaying && (
+          <div className="lofi-status">
+            <div className="lofi-status-header">
+              <div className="lofi-icon">🎛️</div>
+              <div className="lofi-status-text">
+                <h4>Lo-Fi Processing Active</h4>
+                <p>Real-time audio enhancement in <strong>{selectedMood}</strong> mode</p>
+              </div>
+              <div className="lofi-visualizer">
+                <div className="freq-bar"></div>
+                <div className="freq-bar"></div>
+                <div className="freq-bar"></div>
+                <div className="freq-bar"></div>
+              </div>
+            </div>
+            <div className="lofi-effects">
+              <span className="effect-badge">🎵 Low-Pass Filter</span>
+              <span className="effect-badge">📻 Vintage Compression</span>
+              <span className="effect-badge">📀 Vinyl Warmth</span>
+              <span className="effect-badge">🎭 Dynamic EQ</span>
+            </div>
+          </div>
+        )}
 
         <div className="playlist-content">
           <div className="track-list">

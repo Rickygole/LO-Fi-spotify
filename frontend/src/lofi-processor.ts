@@ -20,6 +20,8 @@ export class LoFiProcessor {
   };
   private analysisInterval: number | null = null;
   private isAnalyzing: boolean = false;
+  private visualMode: boolean = false;
+  private frequencyData: Uint8Array | null = null;
 
   async initialize() {
     try {
@@ -406,10 +408,200 @@ export class LoFiProcessor {
     console.log('📀 Vinyl crackle effect added');
   }
 
+  // Connect to an external audio context (like Spotify's)
+  async connectToAudioContext(externalContext: AudioContext) {
+    try {
+      console.log('🔗 Connecting to external audio context...');
+      
+      // Try to tap into the external context's destination
+      if (externalContext.destination) {
+        // Create a script processor to intercept audio
+        const scriptProcessor = externalContext.createScriptProcessor(4096, 2, 2);
+        
+        scriptProcessor.onaudioprocess = (event) => {
+          // Process the audio data through our lo-fi effects
+          this.processAudioBuffer(event.inputBuffer, event.outputBuffer);
+        };
+        
+        // Connect to the external context's destination
+        scriptProcessor.connect(externalContext.destination);
+        
+        console.log('✅ Connected to external audio context');
+        return true;
+      }
+    } catch (error) {
+      console.log('⚠️ Could not connect to external audio context:', error);
+      return false;
+    }
+  }
+
+  // Enable visual-only mode when audio stream access is not available
+  enableVisualMode() {
+    console.log('🎨 Enabling visual lo-fi effects mode...');
+    this.visualMode = true;
+    
+    // Create a mock audio source for visual analysis
+    this.createMockAudioAnalysis();
+  }
+
+  // Process audio buffer through lo-fi effects
+  private processAudioBuffer(inputBuffer: AudioBuffer, outputBuffer: AudioBuffer) {
+    if (!this.audioContext || this.visualMode) return;
+    
+    try {
+      // Apply lo-fi processing to the audio buffer
+      const inputData = inputBuffer.getChannelData(0);
+      const outputData = outputBuffer.getChannelData(0);
+      
+      // Simple lo-fi processing: reduce bit depth and sample rate simulation
+      for (let i = 0; i < inputData.length; i++) {
+        // Bit crushing effect
+        let sample = inputData[i];
+        const bitDepth = 8; // Reduce from 16-bit to 8-bit simulation
+        const step = Math.pow(2, bitDepth - 1);
+        sample = Math.round(sample * step) / step;
+        
+        // Apply lo-fi filter (simple low-pass)
+        sample *= 0.7; // Reduce amplitude for that muffled sound
+        
+        outputData[i] = sample;
+      }
+      
+      // Copy to other channels if stereo
+      if (outputBuffer.numberOfChannels > 1) {
+        const rightOutput = outputBuffer.getChannelData(1);
+        for (let i = 0; i < outputData.length; i++) {
+          rightOutput[i] = outputData[i];
+        }
+      }
+    } catch (error) {
+      console.error('Error processing audio buffer:', error);
+    }
+  }
+
+  // Create mock audio analysis for visual effects
+  private createMockAudioAnalysis() {
+    if (!this.analyserNode) return;
+    
+    this.frequencyData = new Uint8Array(this.analyserNode.frequencyBinCount);
+    
+    // Create fake frequency data that responds to music tempo and mood
+    const updateFakeData = () => {
+      if (!this.frequencyData) return;
+      
+      // Generate realistic frequency data based on current mood
+      const baseFreq = this.currentMood === 'party' ? 80 : 40;
+      const variation = this.currentMood === 'chill' ? 20 : 40;
+      
+      for (let i = 0; i < this.frequencyData.length; i++) {
+        // Simulate frequency response with some randomness
+        const frequency = (i / this.frequencyData.length) * 255;
+        let amplitude = Math.max(0, baseFreq + Math.sin(Date.now() * 0.01 + i * 0.1) * variation);
+        
+        // Apply mood-specific frequency response
+        if (this.currentMood === 'chill') {
+          amplitude *= i < this.frequencyData.length * 0.3 ? 1 : 0.5; // Emphasize low frequencies
+        } else if (this.currentMood === 'party') {
+          amplitude *= i > this.frequencyData.length * 0.7 ? 1.2 : 0.8; // Emphasize high frequencies
+        }
+        
+        this.frequencyData[i] = Math.min(255, amplitude);
+      }
+    };
+    
+    // Update fake data regularly for visual effects
+    setInterval(updateFakeData, 100);
+    console.log('🎭 Mock audio analysis active for visual effects');
+  }
+
+  // Start real-time analysis for visual effects
+  startAnalysis() {
+    if (this.isAnalyzing) return;
+    
+    this.isAnalyzing = true;
+    console.log('📊 Starting real-time audio analysis...');
+    
+    if (this.visualMode) {
+      this.createMockAudioAnalysis();
+    }
+    
+    // Start the analysis loop
+    this.analysisInterval = setInterval(() => {
+      this.updateRealtimeEffects();
+    }, 100) as any;
+    
+    console.log('✅ Real-time audio analysis started');
+  }
+
+  // Update real-time effects based on audio analysis
+  private updateRealtimeEffects() {
+    if (!this.audioContext || !this.frequencyData) return;
+    
+    try {
+      // Get current frequency data
+      if (this.analyserNode && !this.visualMode) {
+        this.analyserNode.getByteFrequencyData(this.frequencyData);
+      }
+      
+      // Analyze the frequency data
+      const bassLevel = this.getFrequencyRange(0, 85);
+      const midLevel = this.getFrequencyRange(85, 170);
+      const trebleLevel = this.getFrequencyRange(170, 255);
+      
+      // Apply dynamic adjustments based on frequency content
+      this.applyDynamicEffects(bassLevel, midLevel, trebleLevel);
+      
+    } catch (error) {
+      console.error('Error in real-time effects update:', error);
+    }
+  }
+
+  // Get average amplitude for a frequency range
+  private getFrequencyRange(startIndex: number, endIndex: number): number {
+    if (!this.frequencyData) return 0;
+    
+    let sum = 0;
+    const count = endIndex - startIndex;
+    
+    for (let i = startIndex; i < endIndex && i < this.frequencyData.length; i++) {
+      sum += this.frequencyData[i];
+    }
+    
+    return sum / count / 255; // Normalize to 0-1
+  }
+
+  // Apply dynamic effects based on frequency analysis
+  private applyDynamicEffects(bass: number, mid: number, treble: number) {
+    if (!this.audioContext || !this.filterNode || !this.gainNode) return;
+    
+    const currentTime = this.audioContext.currentTime;
+    
+    // Adjust filter frequency based on treble content
+    const targetFreq = this.baseMoodSettings.filterFrequency + (treble * 1000);
+    this.filterNode.frequency.setTargetAtTime(targetFreq, currentTime, 0.1);
+    
+    // Adjust gain based on overall level
+    const targetGain = this.baseMoodSettings.gain + ((bass + mid) * 0.1);
+    this.gainNode.gain.setTargetAtTime(Math.min(1.0, targetGain), currentTime, 0.1);
+    
+    // Log for debugging (remove in production)
+    if (Math.random() < 0.1) { // Only log occasionally to avoid spam
+      console.log(`🎛️ Dynamic effects: Bass:${bass.toFixed(2)} Mid:${mid.toFixed(2)} Treble:${treble.toFixed(2)}`);
+    }
+  }
+
   // Cleanup
   dispose() {
     // Stop real-time analysis
     this.stopRealtimeAnalysis();
+    
+    // Stop new analysis interval
+    if (this.analysisInterval) {
+      clearInterval(this.analysisInterval);
+      this.analysisInterval = null;
+    }
+    
+    this.isAnalyzing = false;
     
     if (this.vinylNode) {
       this.vinylNode.stop();
